@@ -134,7 +134,7 @@ def handle_report(message):
 
 def response_help():
     reply =  "Use the `report` command to begin the reporting process.\n"
-    reply += "Use the `cancel` command to cancel the report process.\n"
+    reply += "Use the `cancel` command to cancel the report process  HHHHHHHHH.\n"
     return [reply]
 
 
