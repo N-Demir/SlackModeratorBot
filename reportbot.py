@@ -264,7 +264,8 @@ def eval_text(message, key):
 		'requestedAttributes': {
 								'SEVERE_TOXICITY': {}, 'PROFANITY': {},
 								'IDENTITY_ATTACK': {}, 'THREAT': {},
-								'TOXICITY': {}, 'FLIRTATION': {}
+								'TOXICITY': {}, 'FLIRTATION': {},
+								'SEXUALLY_EXPLICIT': {}, 'INSULT': {}
 							   },
 		'doNotStore': True
 	}
