@@ -47,6 +47,39 @@ SEXUALLY_EXPLICIT_THRESHOLD = 0.8 # Sexually explicit speech
 IDENTITY_ATTACK_THRESHOLD = 0.8 # Racial slurs
 
 
+#############################################################
+# Begin: Our helper functions
+#############################################################
+
+def shouldDelete(scores):
+    scores_above_a_threshold = []
+    if scores["SEVERE_TOXICITY"] >= SEVERE_TOXICITY_THRESHOLD:
+        scores_above_a_threshold.append((scores["SEVERE_TOXICITY"], "hate speech"))
+    if scores["TOXICITY"] >= TOXICITY_THRESHOLD:
+        scores_above_a_threshold.append((scores["TOXICITY"] , "offensive content"))
+    if scores["IDENTITY_ATTACK"] >= IDENTITY_ATTACK_THRESHOLD:
+        scores_above_a_threshold.append((scores["IDENTITY_ATTACK"] , "racial slurs or racial attacks"))
+    if scores["SEXUALLY_EXPLICIT"] >= SEXUALLY_EXPLICIT_THRESHOLD:
+        scores_above_a_threshold.append((scores["SEXUALLY_EXPLICIT"] , "sexually explicit content"))
+
+    if len(scores_above_a_threshold) == 0:
+        return False, ""
+    else:
+        return True, max(scores_above_a_threshold,key=lambda x:x[0])[1]
+
+def deleteMessage(event):
+    print(bot_slack_client.api_call(
+        "chat.delete",
+        channel=event["channel"],
+        ts=event["ts"],
+        as_user=True,
+    ))
+
+#############################################################
+# End: Our helper functions
+#############################################################
+
+
 def handle_slack_events(slack_events):
     '''
     Given the list of all slack events that happened in the past RTM_READ_DELAY,
@@ -70,7 +103,12 @@ def handle_slack_events(slack_events):
                 # You probably want to change this behavior!                #
                 #############################################################
                 # replies = [format_code(json.dumps(scores, indent=2))]
-                replies = ["You sent a message and I will consider whether to delete it"]
+                shouldBeDeleted, reasoning = shouldDelete(scores)
+                if shouldBeDeleted:
+                    deleteMessage(event)
+                    replies = ["Deleted an offending message for {}.".format(reasoning)]
+                else:
+                    replies = ["Good message. I will do nothing."]
 
             # Send bot's response(s) to the same channel the event came from.
             for reply in replies:
