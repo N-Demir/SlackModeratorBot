@@ -1,0 +1,5 @@
+#If you are using a Mac or Linux terminal, use the following commands:
+
+export SLACK_BOT_TOKEN=xoxb-974383384065-976783861761-Syta9dydwsNxGlaYu7iwYC1S
+export SLACK_API_TOKEN=xoxp-974383384065-975379469315-974087731570-cedbc43c5ce9e5d4ec83bfb8540272d0
+export PERSPECTIVE_KEY=AIzaSyDDFm2WHIjSu0ZVSPUQhhGVdhXaQkrMLqk

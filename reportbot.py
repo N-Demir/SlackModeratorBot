@@ -4,6 +4,7 @@ import re
 import requests # *
 import json
 from slackclient import SlackClient # *
+from collections import OrderedDict
 
 # These are personalized tokens - you should have configured them yourself
 # using the 'export' keyword in your terminal.
@@ -319,7 +320,7 @@ def eval_text(message, key):
     response = requests.post(url, data=json.dumps(data_dict))
     response_dict = response.json()
 
-    scores = {}
+    scores = OrderedDict()
     for attr in response_dict["attributeScores"]:
         scores[attr] = response_dict["attributeScores"][attr]["summaryScore"]["value"]
 
