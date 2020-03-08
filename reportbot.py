@@ -86,8 +86,8 @@ def handle_report(message):
 	# If the user isn't in the middle of a report, check if this message has the keyword "report."
 	if user not in reports:
 		if not REPORT_COMMAND in message["text"]:
-			return []
-
+            return response_help()
+            
 		# Add report with initial state.
 		reports[user] = {"state" : STATE_REPORT_START}
 		return response_report_instructions()
@@ -180,7 +180,7 @@ def populate_report(report, message):
 	- text
 	and save all of this info in the report.
 	'''
-	report["ts"],     \
+    report["ts"],     \
 	report["channel"] \
 	= parse_message_from_link(message["text"])
 
