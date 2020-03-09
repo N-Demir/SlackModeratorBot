@@ -40,12 +40,15 @@ STATE_MESSAGE_IDENTIFIED = "message identified" # 2
 reports = {}
 
 
-
 # Thresholds for automatically deleting messages
 SEVERE_TOXICITY_THRESHOLD = 0.8 # Hate speech
 TOXICITY_THRESHOLD = 0.8 # Offensive speech
 SEXUALLY_EXPLICIT_THRESHOLD = 0.8 # Sexually explicit speech
 IDENTITY_ATTACK_THRESHOLD = 0.8 # Racial slurs
+
+
+# Channel identifiers
+GROUP_8_MODERATOR_CHANNEL = "GUS458Y0H"
 
 
 #############################################################
@@ -107,6 +110,14 @@ def handle_slack_events(slack_events):
                 if shouldBeDeleted:
                     deleteMessage(event)
                     replies = ["Deleted an offending message for {}.".format(reasoning)]
+
+                    # Send a message to moderator channel saying message was deleted
+                    bot_slack_client.api_call(
+                        "chat.postMessage",
+                        channel=GROUP_8_MODERATOR_CHANNEL,
+                        text="I deleted a message"
+                    )
+
                 else:
                     replies = ["Good message. I will do nothing."]
 
