@@ -69,11 +69,10 @@ def shouldDelete(scores):
         return True, max(scores_above_a_threshold,key=lambda x:x[0])[1]
 
 def deleteMessage(event):
-    print(bot_slack_client.api_call(
+    print(api_slack_client.api_call(
         "chat.delete",
         channel=event["channel"],
         ts=event["ts"],
-        as_user=True,
     ))
 
 #############################################################
