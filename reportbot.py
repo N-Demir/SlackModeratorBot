@@ -41,10 +41,15 @@ reports = {}
 
 
 # Thresholds for automatically deleting messages
-SEVERE_TOXICITY_THRESHOLD = 0.8 # Hate speech
-TOXICITY_THRESHOLD = 0.8 # Offensive speech
-SEXUALLY_EXPLICIT_THRESHOLD = 0.8 # Sexually explicit speech
-IDENTITY_ATTACK_THRESHOLD = 0.8 # Racial slurs
+SEVERE_TOXICITY_DELETE_THRESHOLD = 0.8 # Hate speech
+TOXICITY_DELETE_THRESHOLD = 0.8 # Offensive speech
+SEXUALLY_EXPLICIT_DELETE_THRESHOLD = 0.8 # Sexually explicit speech
+IDENTITY_ATTACK_DELETE_THRESHOLD = 0.8 # Racial slurs
+
+SEVERE_TOXICITY_FLAG_THRESHOLD = 0.5 # Hate speech
+TOXICITY_FLAG_THRESHOLD = 0.5 # Offensive speech
+SEXUALLY_EXPLICIT_FLAG_THRESHOLD = 0.5 # Sexually explicit speech
+IDENTITY_ATTACK_FLAG_THRESHOLD = 0.5 # Racial slurs
 
 
 # Channel identifiers
@@ -55,21 +60,35 @@ GROUP_8_MODERATOR_CHANNEL = "GUS458Y0H"
 # Begin: Our helper functions
 #############################################################
 
-def shouldDelete(scores):
-    scores_above_a_threshold = []
-    if scores["SEVERE_TOXICITY"] >= SEVERE_TOXICITY_THRESHOLD:
-        scores_above_a_threshold.append((scores["SEVERE_TOXICITY"], "hate speech"))
-    if scores["TOXICITY"] >= TOXICITY_THRESHOLD:
-        scores_above_a_threshold.append((scores["TOXICITY"] , "offensive content"))
-    if scores["IDENTITY_ATTACK"] >= IDENTITY_ATTACK_THRESHOLD:
-        scores_above_a_threshold.append((scores["IDENTITY_ATTACK"] , "racial slurs or racial attacks"))
-    if scores["SEXUALLY_EXPLICIT"] >= SEXUALLY_EXPLICIT_THRESHOLD:
-        scores_above_a_threshold.append((scores["SEXUALLY_EXPLICIT"] , "sexually explicit content"))
+def shouldModerate(scores):
+    scores_above_a_deletion_threshold = []
+    if scores["SEVERE_TOXICITY"] >= SEVERE_TOXICITY_DELETE_THRESHOLD:
+        scores_above_a_deletion_threshold.append((scores["SEVERE_TOXICITY"], "hate speech"))
+    if scores["TOXICITY"] >= TOXICITY_DELETE_THRESHOLD:
+        scores_above_a_deletion_threshold.append((scores["TOXICITY"] , "offensive content"))
+    if scores["IDENTITY_ATTACK"] >= IDENTITY_ATTACK_DELETE_THRESHOLD:
+        scores_above_a_deletion_threshold.append((scores["IDENTITY_ATTACK"] , "racial slurs or racial attacks"))
+    if scores["SEXUALLY_EXPLICIT"] >= SEXUALLY_EXPLICIT_DELETE_THRESHOLD:
+        scores_above_a_deletion_threshold.append((scores["SEXUALLY_EXPLICIT"] , "sexually explicit content"))
 
-    if len(scores_above_a_threshold) == 0:
-        return False, ""
-    else:
-        return True, max(scores_above_a_threshold,key=lambda x:x[0])[1]
+    if len(scores_above_a_deletion_threshold) != 0:
+        return "delete", max(scores_above_a_deletion_threshold,key=lambda x:x[0])[1]
+
+
+    scores_above_a_flagging_threshold = []
+    if scores["SEVERE_TOXICITY"] >= SEVERE_TOXICITY_FLAG_THRESHOLD:
+        scores_above_a_flagging_threshold.append((scores["SEVERE_TOXICITY"], "hate speech"))
+    if scores["TOXICITY"] >= TOXICITY_FLAG_THRESHOLD:
+        scores_above_a_flagging_threshold.append((scores["TOXICITY"] , "offensive content"))
+    if scores["IDENTITY_ATTACK"] >= IDENTITY_ATTACK_FLAG_THRESHOLD:
+        scores_above_a_flagging_threshold.append((scores["IDENTITY_ATTACK"] , "racial slurs or racial attacks"))
+    if scores["SEXUALLY_EXPLICIT"] >= SEXUALLY_EXPLICIT_FLAG_THRESHOLD:
+        scores_above_a_flagging_threshold.append((scores["SEXUALLY_EXPLICIT"] , "sexually explicit content"))
+
+    if len(scores_above_a_flagging_threshold) != 0:
+        return "flagging", max(scores_above_a_flagging_threshold,key=lambda x:x[0])[1]
+
+    return "nothing", ""
 
 def deleteMessage(event):
     print(api_slack_client.api_call(
@@ -105,9 +124,8 @@ def handle_slack_events(slack_events):
                 # STUDENT TODO: currently this always prints out the scores.#
                 # You probably want to change this behavior!                #
                 #############################################################
-                # replies = [format_code(json.dumps(scores, indent=2))]
-                shouldBeDeleted, reasoning = shouldDelete(scores)
-                if shouldBeDeleted:
+                moderation, reasoning = shouldModerate(scores)
+                if moderation == "delete":
                     deleteMessage(event)
                     replies = ["Deleted an offending message for {}.".format(reasoning)]
 
@@ -117,7 +135,15 @@ def handle_slack_events(slack_events):
                         channel=GROUP_8_MODERATOR_CHANNEL,
                         text="I deleted a message"
                     )
+                elif moderation == "flagging":
+                    replies = ["Flagged an offending message for {}.".format(reasoning)]
 
+                    # Send a message to moderator channel saying message was deleted
+                    bot_slack_client.api_call(
+                        "chat.postMessage",
+                        channel=GROUP_8_MODERATOR_CHANNEL,
+                        text="I flagged a message"
+                    )
                 else:
                     replies = ["Good message. I will do nothing."]
 
