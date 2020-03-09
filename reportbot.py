@@ -1,3 +1,4 @@
+#https://github.com/N-Demir/SlackModeratorBot.git
 import os
 import time
 import re
@@ -30,9 +31,21 @@ REPORT_COMMAND = "report"
 CANCEL_COMMAND = "cancel"
 HELP_COMMAND = "help"
 
+# Message categories
+HATE = "hate speech"
+OFFENSIVE = "offensive content"
+RACIAL = "racial slurs or racial attacks"
+SEX = "sexually explicit content"
+OTHER = "other"
+
 # Possible report states - saved as strings for easier debugging.
 STATE_REPORT_START       = "report received"    # 1
 STATE_MESSAGE_IDENTIFIED = "message identified" # 2
+STATE_CATEGORY_IDENTIFIED = "category identified" # 3
+STATE_CHECKED_DANGER = "checked for danger" # 4
+STATE_DESCRIPTION_SUBMITTED = "description submitted" # 5
+STATE_OTHER_MSGS_SUBMITTED = "other messages submitted" # 6
+STATE_REPORT_SUBMITTED = "report submitted" # 7
 
 
 # Currently managed reports. Keys are users, values are report state info.
@@ -204,19 +217,37 @@ def handle_report(message):
             return response_identify_message(user)
 
         elif report["state"] == STATE_MESSAGE_IDENTIFIED:
-            return response_what_next()
+            return categorize_message(user, message["text"].lower())
+
+        elif report["state"] == STATE_CATEGORY_IDENTIFIED:
+            return check_danger(user, message["text"].lower())
+
+        elif report["state"] == STATE_CHECKED_DANGER:
+            report["description"] = []
+            return gather_description(user, message["text"])
+
+        elif report["state"] == STATE_DESCRIPTION_SUBMITTED:
+            report["other messages"] = []
+            return get_other_msgs(user, message["text"])
+
+        elif report["state"] == STATE_OTHER_MSGS_SUBMITTED:
+            return finish_report(user, message["text"].lower())
+
+        elif report["state"] == STATE_REPORT_SUBMITTED:
+            return submitted(user, message["text"].lower())
 
 
 def response_help():
     reply =  "Use the `report` command to begin the reporting process.\n"
-    reply += "Use the `cancel` command to cancel the report process  HHHHHHHHH.\n"
+    reply += "Use the `cancel` command to cancel the report process.\n"
     return [reply]
 
 
 def response_report_instructions():
     reply =  "Thank you for starting the reporting process. "
-    reply += "Say `help` at any time for more information.\n\n"
-    reply +=  "Please copy paste the link to the message you want to report.\n"
+    reply += "Say `help` at any time for more information," \
+             + " or say `cancel` at any time to cancel your report.\n\n"
+    reply += "Please copy paste the link to the message you want to report.\n"
     reply += "You can obtain this link by clicking on the three dots in the" \
           +  " corner of the message and clicking `Copy link`."
     return [reply]
@@ -232,18 +263,174 @@ def response_identify_message(user):
     reply += " (" + report["author_name"] + ").\n\n"
     replies.append(reply)
 
-    reply =  "_This is as far as the bot knows how to go - " \
-          +  "it will be up to students to build the rest of this process._\n"
-    reply += "Use the `cancel` keyword to cancel this report."
+    reply =  "Now, I'd like to ask you a few questions to help" \
+             + " our moderators respond to your report.\n\n"
+    reply += "First, please tell us what category of message you're reporting." \
+             + " If the message you're reporting falls into multiple categories," \
+             + " please choose the category that best descripes it." \
+             + " You'll have a chance afterward to provide additional details.\n\n"
+    reply += "1 - `hate speech`\n"
+    reply += "2 - `offensive content`\n"
+    reply += "3 - `racial slurs`\n"
+    reply += "4 - `sexually explicit content`\n"
+    reply += "5 - `other`"
+    replies.append(reply)
+
+    return replies
+    
+
+def categorize_message(user, text):
+    replies = []
+    report = reports[user]
+    if "hate speech" in text or "1" in text:
+        report["category"] = HATE
+    elif "offensive" in text or "2" in text:
+        report["category"] = OFFENSIVE
+    elif "racial" in text or "race" in text or "slur" in text or "3" in text:
+        report["category"] = RACIAL
+    elif "sex" in text or "4" in text:
+        report["category"] = SEX
+    else:
+        report["category"] = OTHER
+
+    reply = "I see; you're reporting this message because it contains " \
+            + report["category"] \
+            + ".\n\n"
+    replies.append(reply)
+    report["state"] = STATE_CATEGORY_IDENTIFIED
+    
+    reply = "Before we go any further, I need to make sure nobody's in danger.\n\n"
+    reply += "If the person whose message you're reporting is encouraging you" \
+             + " to harm yourself, or if you're concerned that you might harm yourself," \
+             + " please enter `self` so that we can appropriately categorize your report.\n\n"
+    reply += "Or if you believe that the person whose message you're reporting is" \
+             + "likely to harm someone else, please enter `someone else`.\n\n"
+    reply += "Otherwise, if you don't believe that anyone's physical safety is in" \
+             + " imminent danger, please enter `none`."
     replies.append(reply)
 
     return replies
 
+def check_danger(user, text):
+    replies = []
+    report = reports[user]
 
-def response_what_next():
-    reply =  "_This is as far as the bot knows how to go._\n"
-    reply += "Use the `cancel` keyword to cancel this report."
-    return [reply]
+    if "self" in text:
+        reply = "Please, don't hurt yourself. The National Suicide Prevention Hotline" \
+                + " has live counselors available to talk 24/7. Their number is 1-800-273-8255.\n\n"
+        reply += "I'll wait as long as you need; we can finish the report together when you're safe."
+        replies.append(reply)
+    elif "someone" in text:
+        reply = "If the person whose message you're reporting is likely to harm someone else," \
+                + " please call 911 and report them to law enforcement before going any further.\n\n"
+        reply += "I'll wait as long as you need; we can finish the report together when everyone's safe."
+        replies.append(reply)
+    else:
+        reply = "Okay. I'm glad nobody's in danger.\n\n"
+        replies.append(reply)
+
+    report["state"] = STATE_CHECKED_DANGER
+    reply = "Whenever you're ready, could you please describe, in your own words, what kind" \
+            + " of content you're reporting, as well as why you're reporting it?\n\n"
+    replies.append(reply)
+    return replies
+    
+def gather_description(user, text):
+    report = reports[user]
+    if text.lower() != "done":
+        report["description"].append(text)
+        reply = "I see. Is that everything? If so, please enter `done`, and" \
+                + " we'll proceed to the next step of the report.\n"
+        reply += "But if you've got more to add, please share as much detail" \
+                 + " as you like, and I'll include it all in the report."
+        return [reply]
+    else:
+        report["state"] = STATE_DESCRIPTION_SUBMITTED
+        reply = "Got it; thank you!\n\n"
+        reply += "Next question: Are there any other messages from this user" \
+                 + " that you want to report, or that you think might provide" \
+                 + " helpful context for our moderators?\n\n"
+        reply += "If so, please copy and paste the link to the message(s) you" \
+                 + " want to add to your report, one at a time. If not, enter `none`."
+        return [reply]
+
+def get_other_msgs(user, text):
+    report = reports[user]
+    replies = []
+    if text == "none":
+        reply = "Okay then!"
+        replies.append(reply)
+    elif "slack.com" in text:
+        report["other messages"].append(text)
+        reply = "Got it!\n\n"
+        reply += "If you want to add additional messages to your report, please" \
+                 + " copy and paste the link to the message(s), one at a time." \
+                 + " Or if you're done adding messages, please enter `none`."
+        replies.append(reply)
+        return replies
+    else:
+        reply = "I'm sorry; that reply wasn't quite what I was expecting.\n\n"
+        reply += "If you want to add additional messages to your report, please" \
+                 + " copy and paste the link to the message(s), one at a time." \
+                 + " If you don't want to add additional messages, but you want to" \
+                 + " continue submitting your report, please enter `none`. Or if you" \
+                 + " want to cancel your report, you can enter `cancel`."
+        replies.append(reply)
+        return replies
+
+    report["state"] = STATE_OTHER_MSGS_SUBMITTED
+    reply = "We're almost done. Last question: do you want to block the person" \
+            + " who sent you this message?\n\n"
+    reply += "If so, they won't be able to DM you anymore, and you won't see their" \
+             + " messages in any group chats.\n\n"
+    reply += "If you want to block them, please enter `block`. Otherwise, please enter" \
+             + " `continue`."
+    replies.append(reply)
+    return replies
+
+def finish_report(user, text):
+    report = reports[user]
+    replies = []
+    if text == "block":
+        report["block"] = True
+        reply = "Got it--you won't see any more messages from them."
+        replies.append(reply)
+    elif text == "continue":
+        report["block"] = False
+        reply = "Okay! We'll leave them unblocked for now."
+        replies.append(reply)
+    else:
+        reply = "I'm sorry; that reply wasn't quite what I was expecting.\n\n"
+        reply += "If you want to block the person whose message you're reporting," \
+                 + " please enter `block`. If not, enter `continue`. Or if you want" \
+                 + " to cancel your report, you can enter `cancel`."
+        return [reply]
+
+    report["state"] = STATE_REPORT_SUBMITTED
+    reply = "Well, that's everything I needed for the report.\n\n"
+    reply += "I'm going to package this up and present it to a human moderator. They'll" \
+             + " takes things from here.\n\n"
+    reply += "Thank you for taking the time to help make Slack a safer and more inclusive" \
+             + " space. If you encounter any other harmful content, we hope you'll feel" \
+             + " comfortable bringing it to us.\n\n"
+    reply += "Please be safe!"
+    replies.append(reply)
+    return replies
+
+def submitted(user, text):
+    report = reports[user]
+    replies = []
+    if "report" in text:
+        report["state"] = STATE_REPORT_START
+        return response_report_instructions()
+    reply = "I've brought your report to a human moderator. They'll be responsible for" \
+            + " taking things from here.\n\n"
+    reply += "In the meantime, if you need to submit another report, please enter `report`.\n\n"
+    reply += "Otherwise, please be safe!"
+    replies.append(reply)
+    return replies
+    
+        
 
 
 
