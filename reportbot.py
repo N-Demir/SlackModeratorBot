@@ -6,6 +6,7 @@ import requests # *
 import json
 from slackclient import SlackClient # *
 from collections import OrderedDict
+import copy
 
 # These are personalized tokens - you should have configured them yourself
 # using the 'export' keyword in your terminal.
@@ -52,22 +53,24 @@ STATE_REPORT_SUBMITTED = "report submitted" # 7
 # Each report corresponds to a single message.
 reports = {}
 
+# List of users with bad content
+banning_list = {}
+
 
 # Thresholds for automatically deleting messages
 SEVERE_TOXICITY_DELETE_THRESHOLD = 0.8 # Hate speech
 TOXICITY_DELETE_THRESHOLD = 0.8 # Offensive speech
-SEXUALLY_EXPLICIT_DELETE_THRESHOLD = 0.8 # Sexually explicit speech
+SEXUALLY_EXPLICIT_DELETE_THRESHOLD = 0.9 # Sexually explicit speech
 IDENTITY_ATTACK_DELETE_THRESHOLD = 0.8 # Racial slurs
 
 SEVERE_TOXICITY_FLAG_THRESHOLD = 0.5 # Hate speech
 TOXICITY_FLAG_THRESHOLD = 0.5 # Offensive speech
-SEXUALLY_EXPLICIT_FLAG_THRESHOLD = 0.5 # Sexually explicit speech
+SEXUALLY_EXPLICIT_FLAG_THRESHOLD = 0.7 # Sexually explicit speech
 IDENTITY_ATTACK_FLAG_THRESHOLD = 0.5 # Racial slurs
 
 
 # Channel identifiers
 GROUP_8_MODERATOR_CHANNEL = "GUS458Y0H"
-
 
 #############################################################
 # Begin: Our helper functions
@@ -104,11 +107,48 @@ def shouldModerate(scores):
     return "nothing", ""
 
 def deleteMessage(event):
-    print(api_slack_client.api_call(
+    api_slack_client.api_call(
         "chat.delete",
         channel=event["channel"],
         ts=event["ts"],
-    ))
+    )
+
+def getUserNameFromEvent(event):
+    return api_slack_client.api_call(
+        "users.profile.get",
+        user=event["user"],
+    )["profile"]["display_name"]
+
+
+def handle_moderator(event):
+    moderater_message = banning_list.get("moderator_message", None)
+    if moderater_message == None:
+        return []
+
+    reply = []
+
+    if event["text"] == "ban":
+        banning_list[moderater_message["user"]] = 2.0
+        print("Banned the messager.")
+    elif event["text"] == "delete":
+        deleteMessage(moderater_message)
+        print("Deleted the message.")
+    elif event["text"] == "report":
+        reply = handle_report(event)
+        event["channel"] = get_dm_channel(event, event["user"])
+    return reply
+
+
+def get_dm_channel(event, user):
+    response = bot_slack_client.api_call(
+        "conversations.list",
+        types="im"
+    )
+
+    for channel in response["channels"]:
+        if channel["user"] == user:
+            return channel["id"]
+
 
 #############################################################
 # End: Our helper functions
@@ -129,6 +169,8 @@ def handle_slack_events(slack_events):
             if (is_dm(event["channel"])):
                 # May or may not be part of a report, but we need to check
                 replies = handle_report(event)
+            elif event["channel"] == GROUP_8_MODERATOR_CHANNEL:
+                replies = handle_moderator(event)
             else:
                 # Send all public messages to perspective for review
                 scores = eval_text(event["text"], PERSPECTIVE_KEY)
@@ -138,27 +180,45 @@ def handle_slack_events(slack_events):
                 # You probably want to change this behavior!                #
                 #############################################################
                 moderation, reasoning = shouldModerate(scores)
-                if moderation == "delete":
+                replies = []
+
+                if moderation == "delete" or banning_list.get(event["user"], 0) >= 2.0:
                     deleteMessage(event)
+
+                    if banning_list.get(event["user"], 0) >= 2.0:
+                        break
+
                     replies = ["Deleted an offending message for {}.".format(reasoning)]
 
                     # Send a message to moderator channel saying message was deleted
                     bot_slack_client.api_call(
                         "chat.postMessage",
                         channel=GROUP_8_MODERATOR_CHANNEL,
-                        text="I deleted a message"
+                        text= "I deleted the following message: \"{}\". By user: \"{}\". You can ".format(event["text"], getUserNameFromEvent(event)) \
+                            + "respond with a few moderator options: \"ban\" = Ban User. \"report\" = Start reporting flow."
                     )
-                elif moderation == "flagging":
-                    replies = ["Flagged an offending message for {}.".format(reasoning)]
 
-                    # Send a message to moderator channel saying message was deleted
+                    banning_list[event["user"]] = banning_list.get(event["user"], 0) + 1
+                    banning_list["moderator_message"] = event
+
+                elif moderation == "flagging":
+                    getUserNameFromEvent(event)
+                    # Send a message to moderator channel saying message was flagged
                     bot_slack_client.api_call(
                         "chat.postMessage",
                         channel=GROUP_8_MODERATOR_CHANNEL,
-                        text="I flagged a message"
+                        text= "I flagged the following message: \"{}\". By user: \"{}\". You can ".format(event["text"], getUserNameFromEvent(event)) \
+                            + "respond with a few moderator options: \"delete\" = Delete the message. \"ban\" = Ban User. \"report\" = Start reporting flow."
                     )
-                else:
-                    replies = ["Good message. I will do nothing."]
+                    bot_slack_client.api_call(
+                        "reactions.add",
+                        channel=event["channel"],
+                        name="triangular_flag_on_post",
+                        timestamp=event["ts"]
+                    )
+
+                    banning_list[event["user"]] = banning_list.get(event["user"], 0) + 0.75
+                    banning_list["moderator_message"] = event
 
             # Send bot's response(s) to the same channel the event came from.
             for reply in replies:
@@ -303,7 +363,7 @@ def categorize_message(user, text):
     reply += "If the person whose message you're reporting is encouraging you" \
              + " to harm yourself, or if you're concerned that you might harm yourself," \
              + " please enter `self` so that we can appropriately categorize your report.\n\n"
-    reply += "Or if you believe that the person whose message you're reporting is" \
+    reply += "Or if you believe that the person whose message you're reporting is " \
              + "likely to harm someone else, please enter `someone else`.\n\n"
     reply += "Otherwise, if you don't believe that anyone's physical safety is in" \
              + " imminent danger, please enter `none`."
